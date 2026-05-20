@@ -24,6 +24,8 @@ func New(c *client.Client) *server.MCPServer {
 	tools.RegisterListPipelines(s, c)
 	tools.RegisterListPromotions(s, c)
 	tools.RegisterGetPromotion(s, c)
+	tools.RegisterListPromotionSteps(s, c)
+	tools.RegisterGetPromotionStepLogs(s, c)
 	return s
 }
 

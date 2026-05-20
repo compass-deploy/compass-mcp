@@ -131,3 +131,39 @@ type ListPromotionsOpts struct {
 	Environment string
 	Release     string
 }
+
+// StepSummary is one Pod-type node from an Argo Workflow projected for
+// the agent. NodeID is the opaque identifier the agent passes back to
+// get_promotion_step_logs; step is the friendlier displayName /
+// templateName for the agent to refer to in prose.
+type StepSummary struct {
+	Step       string `json:"step"`
+	NodeID     string `json:"nodeId"`
+	Phase      string `json:"phase,omitempty"`
+	StartedAt  string `json:"startedAt,omitempty"`
+	FinishedAt string `json:"finishedAt,omitempty"`
+}
+
+// workflowResponse mirrors the slice of the Argo Workflow object we
+// care about — only status.nodes. The full workflow has hundreds of
+// fields; this decode pattern drops everything else automatically.
+type workflowResponse struct {
+	Status struct {
+		Nodes map[string]workflowNode `json:"nodes"`
+	} `json:"status"`
+}
+
+type workflowNode struct {
+	Type         string `json:"type"`
+	DisplayName  string `json:"displayName"`
+	TemplateName string `json:"templateName"`
+	Phase        string `json:"phase"`
+	StartedAt    string `json:"startedAt"`
+	FinishedAt   string `json:"finishedAt"`
+}
+
+// stepLogsResponse is the body of GET .../steps/{node}/logs — a single
+// "logs" string. Field name matches compass-api's getStepLogs handler.
+type stepLogsResponse struct {
+	Logs string `json:"logs"`
+}

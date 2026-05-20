@@ -99,10 +99,12 @@ func TestStdioSmoke(t *testing.T) {
 	listResp := recv(t, r)
 	tools, _ := jpath(listResp, "result", "tools").([]any)
 	expected := map[string]bool{
-		"whoami":          false,
-		"list_pipelines":  false,
-		"list_promotions": false,
-		"get_promotion":   false,
+		"whoami":                  false,
+		"list_pipelines":          false,
+		"list_promotions":         false,
+		"get_promotion":           false,
+		"list_promotion_steps":    false,
+		"get_promotion_step_logs": false,
 	}
 	for _, tt := range tools {
 		if m, ok := tt.(map[string]any); ok {
