@@ -92,19 +92,26 @@ func TestStdioSmoke(t *testing.T) {
 		"params":  map[string]any{},
 	})
 
-	// 2. tools/list — must advertise whoami
+	// 2. tools/list — must advertise every registered tool. Smoke against
+	// the full set so a forgotten Register* call shows up here, not in
+	// production.
 	send(t, stdin, map[string]any{"jsonrpc": "2.0", "id": 2, "method": "tools/list", "params": map[string]any{}})
 	listResp := recv(t, r)
 	tools, _ := jpath(listResp, "result", "tools").([]any)
-	var found bool
+	expected := map[string]bool{"whoami": false, "list_pipelines": false}
 	for _, tt := range tools {
-		if m, ok := tt.(map[string]any); ok && m["name"] == "whoami" {
-			found = true
-			break
+		if m, ok := tt.(map[string]any); ok {
+			if name, _ := m["name"].(string); name != "" {
+				if _, want := expected[name]; want {
+					expected[name] = true
+				}
+			}
 		}
 	}
-	if !found {
-		t.Fatalf("whoami not in tools/list response: %s", listResp)
+	for name, present := range expected {
+		if !present {
+			t.Fatalf("%s not in tools/list response: %s", name, listResp)
+		}
 	}
 
 	// 3. tools/call whoami — must round-trip the impersonated user back

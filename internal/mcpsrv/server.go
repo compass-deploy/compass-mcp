@@ -21,6 +21,7 @@ const (
 func New(c *client.Client) *server.MCPServer {
 	s := server.NewMCPServer(Name, Version)
 	tools.RegisterWhoami(s, c)
+	tools.RegisterListPipelines(s, c)
 	return s
 }
 
