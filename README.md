@@ -36,8 +36,20 @@ Build the binary:
 go build -o bin/compass-mcp ./cmd/compass-mcp
 ```
 
-Configure your agent. For Claude Code, add to
-`~/Library/Application Support/Claude/claude_desktop_config.json` (macOS):
+Register the server with Claude Code:
+
+```bash
+claude mcp add compass \
+  -e COMPASS_URL=https://compass.example.com \
+  -e COMPASS_USERNAME=admin \
+  -e COMPASS_PASSWORD=your-admin-password \
+  -- /absolute/path/to/bin/compass-mcp
+```
+
+For Cursor or Claude Desktop, drop the same shape into the agent's MCP
+config file (`~/.cursor/mcp.json` for Cursor;
+`~/Library/Application Support/Claude/claude_desktop_config.json` for
+Claude Desktop on macOS):
 
 ```json
 {
