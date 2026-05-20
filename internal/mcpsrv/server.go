@@ -22,6 +22,8 @@ func New(c *client.Client) *server.MCPServer {
 	s := server.NewMCPServer(Name, Version)
 	tools.RegisterWhoami(s, c)
 	tools.RegisterListPipelines(s, c)
+	tools.RegisterListPromotions(s, c)
+	tools.RegisterGetPromotion(s, c)
 	return s
 }
 

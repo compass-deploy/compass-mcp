@@ -68,3 +68,66 @@ func (p pipelineItem) toSummary() PipelineSummary {
 // fields, the full spec). Used by get_promotion where one record's
 // fidelity matters.
 type RawPromotion = json.RawMessage
+
+// PromotionSummary is the projection of a Promotion CR exposed to the
+// agent on list calls. Includes everything an agent needs to triage
+// without burning context on managedFields / conditions / labels.
+type PromotionSummary struct {
+	Name              string `json:"name"`
+	Environment       string `json:"environment"`
+	Release           string `json:"release"`
+	Phase             string `json:"phase,omitempty"`
+	RequestedBy       string `json:"requestedBy,omitempty"`
+	WorkflowRef       string `json:"workflowRef,omitempty"`
+	StartedAt         string `json:"startedAt,omitempty"`
+	CompletedAt       string `json:"completedAt,omitempty"`
+	CreationTimestamp string `json:"creationTimestamp,omitempty"`
+}
+
+// promotionListResponse mirrors compass-api's PromotionList wrapper.
+// promotionItem only pulls the fields PromotionSummary needs; the rest
+// (system metadata, conditions) drop on decode.
+type promotionListResponse struct {
+	Items []promotionItem `json:"items"`
+}
+
+type promotionItem struct {
+	Metadata objectMeta       `json:"metadata"`
+	Spec     promotionSpec    `json:"spec"`
+	Status   promotionStatus  `json:"status"`
+}
+
+type promotionSpec struct {
+	EnvironmentRef   string `json:"environmentRef"`
+	BundleReleaseRef string `json:"bundleReleaseRef"`
+	RequestedBy      string `json:"requestedBy,omitempty"`
+}
+
+type promotionStatus struct {
+	Phase       string `json:"phase,omitempty"`
+	WorkflowRef string `json:"workflowRef,omitempty"`
+	StartedAt   string `json:"startedAt,omitempty"`
+	CompletedAt string `json:"completedAt,omitempty"`
+}
+
+func (p promotionItem) toSummary() PromotionSummary {
+	return PromotionSummary{
+		Name:              p.Metadata.Name,
+		Environment:       p.Spec.EnvironmentRef,
+		Release:           p.Spec.BundleReleaseRef,
+		Phase:             p.Status.Phase,
+		RequestedBy:       p.Spec.RequestedBy,
+		WorkflowRef:       p.Status.WorkflowRef,
+		StartedAt:         p.Status.StartedAt,
+		CompletedAt:       p.Status.CompletedAt,
+		CreationTimestamp: p.Metadata.CreationTimestamp,
+	}
+}
+
+// ListPromotionsOpts carries the optional server-side filters compass-api
+// supports on GET /api/pipelines/{p}/promotions. Empty strings are
+// omitted from the query string.
+type ListPromotionsOpts struct {
+	Environment string
+	Release     string
+}

@@ -98,7 +98,12 @@ func TestStdioSmoke(t *testing.T) {
 	send(t, stdin, map[string]any{"jsonrpc": "2.0", "id": 2, "method": "tools/list", "params": map[string]any{}})
 	listResp := recv(t, r)
 	tools, _ := jpath(listResp, "result", "tools").([]any)
-	expected := map[string]bool{"whoami": false, "list_pipelines": false}
+	expected := map[string]bool{
+		"whoami":          false,
+		"list_pipelines":  false,
+		"list_promotions": false,
+		"get_promotion":   false,
+	}
 	for _, tt := range tools {
 		if m, ok := tt.(map[string]any); ok {
 			if name, _ := m["name"].(string); name != "" {
