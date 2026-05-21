@@ -52,8 +52,11 @@ func TestListPromotionsHandler_Success(t *testing.T) {
 	if res.IsError {
 		t.Fatalf("unexpected IsError=true: %+v", res.Content)
 	}
-	got := res.StructuredContent.([]client.PromotionSummary)
-	if len(got) != 1 || got[0].Environment != "dev" || got[0].RequestedBy != "alice" {
+	got, ok := res.StructuredContent.(listPromotionsResult)
+	if !ok {
+		t.Fatalf("structured content not listPromotionsResult: %T", res.StructuredContent)
+	}
+	if len(got.Promotions) != 1 || got.Promotions[0].Environment != "dev" || got.Promotions[0].RequestedBy != "alice" {
 		t.Errorf("unexpected structured: %+v", got)
 	}
 	if !strings.Contains(gotQuery, "environment=dev") {

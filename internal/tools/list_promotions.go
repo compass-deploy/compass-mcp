@@ -36,6 +36,12 @@ func RegisterListPromotions(s *server.MCPServer, c *client.Client) {
 	s.AddTool(t, listPromotionsHandler(c))
 }
 
+// listPromotionsResult wraps the slice so structuredContent is a JSON
+// object at the root — MCP rejects bare arrays in structuredContent.
+type listPromotionsResult struct {
+	Promotions []client.PromotionSummary `json:"promotions"`
+}
+
 func listPromotionsHandler(c *client.Client) server.ToolHandlerFunc {
 	return func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 		pipeline, err := req.RequireString("pipeline")
@@ -50,6 +56,6 @@ func listPromotionsHandler(c *client.Client) server.ToolHandlerFunc {
 		if err != nil {
 			return upstreamError("list promotions", err), nil
 		}
-		return structuredJSON(promotions)
+		return structuredJSON(listPromotionsResult{Promotions: promotions})
 	}
 }

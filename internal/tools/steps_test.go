@@ -34,8 +34,11 @@ func TestListPromotionStepsHandler_Success(t *testing.T) {
 	if res.IsError {
 		t.Fatalf("unexpected IsError: %+v", res.Content)
 	}
-	got := res.StructuredContent.([]client.StepSummary)
-	if len(got) != 2 || got[0].NodeID != "p1-render" || got[1].NodeID != "p1-deploy" {
+	got, ok := res.StructuredContent.(listPromotionStepsResult)
+	if !ok {
+		t.Fatalf("structured content not listPromotionStepsResult: %T", res.StructuredContent)
+	}
+	if len(got.Steps) != 2 || got.Steps[0].NodeID != "p1-render" || got.Steps[1].NodeID != "p1-deploy" {
 		t.Errorf("unexpected ordering/content: %+v", got)
 	}
 }

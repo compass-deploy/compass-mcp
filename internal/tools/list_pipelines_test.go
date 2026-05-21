@@ -38,11 +38,14 @@ func TestListPipelinesHandler_Integration(t *testing.T) {
 		t.Fatalf("unexpected IsError=true: %+v", res.Content)
 	}
 
-	got, ok := res.StructuredContent.([]client.PipelineSummary)
+	// MCP requires structuredContent to be a JSON object at the root —
+	// a bare slice triggers "expected record, received array" on the
+	// client. The list tool wraps the slice in a typed envelope.
+	got, ok := res.StructuredContent.(listPipelinesResult)
 	if !ok {
-		t.Fatalf("structured content not []PipelineSummary: %T", res.StructuredContent)
+		t.Fatalf("structured content not listPipelinesResult: %T", res.StructuredContent)
 	}
-	if len(got) != 2 || got[0].Name != "myapp" || got[0].Namespace != "compass-myapp" {
+	if len(got.Pipelines) != 2 || got.Pipelines[0].Name != "myapp" || got.Pipelines[0].Namespace != "compass-myapp" {
 		t.Errorf("unexpected structured content: %+v", got)
 	}
 
