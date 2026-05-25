@@ -11,8 +11,9 @@ has in the UI.
 
 ## Status
 
-V1: admin-account auth + six read-only tools. OIDC device-flow and
-write tools (promote / approve / invalidate) are deferred.
+V1: admin-account or **SSO loopback-redirect** auth + six read-only
+tools. Write tools (promote / approve / invalidate) are deferred — see
+[IDEAS.md](IDEAS.md).
 
 ## Tools
 
@@ -77,12 +78,28 @@ into the subprocess:
 | Variable | Required | Purpose |
 |---|---|---|
 | `COMPASS_URL` | yes | Base URL of the Compass api server (e.g. `https://compass.example.com`). No trailing slash. |
-| `COMPASS_USERNAME` | yes | Admin account username on the Compass server. |
-| `COMPASS_PASSWORD` | yes | Admin account password. |
+| `COMPASS_USERNAME` | optional | Admin account username. Setting this triggers the admin-login path. |
+| `COMPASS_PASSWORD` | only if `COMPASS_USERNAME` is set | Admin account password. |
+| `COMPASS_MCP_CONFIG_DIR` | optional | Overrides the OS config-dir lookup for the JWT cache. Used by tests; rarely needed in production. |
 
-The server lazily logs in on the first tool call, caches the session
-cookie in-process, and re-auths once on a 401 so long-running agent
-sessions survive a JWT expiry mid-conversation.
+### Two auth paths
+
+- **Admin account** (set `COMPASS_USERNAME` + `COMPASS_PASSWORD`): the
+  MCP logs in via `POST /api/auth/admin-login` lazily on the first
+  tool call. Re-auths once on 401. Right for local dev and CI.
+- **SSO loopback** (omit `COMPASS_USERNAME`): on startup, the MCP
+  checks `~/.config/compass-mcp/session.json` for a cached JWT for
+  this `COMPASS_URL`. If found and unexpired, it's reused —
+  invisible to you. Otherwise the MCP starts an ephemeral local
+  listener on `127.0.0.1:<port>/cli-callback`, opens your browser to
+  compass-api's `/api/auth/cli/login`, you complete the standard OIDC
+  flow, the JWT is captured at the loopback and cached. Subsequent
+  process starts reuse the cached JWT. On JWT expiry mid-session,
+  the next tool call returns a clean "restart the MCP server" error.
+
+The on-disk cache is mode `0600` and keyed by `COMPASS_URL`, so a
+single MCP install can target multiple compass instances without
+overwriting each other.
 
 ## Development
 

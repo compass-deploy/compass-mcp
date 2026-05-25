@@ -6,7 +6,7 @@ context (sketches, decisions, links) without bloating any single file.
 
 | Idea | Status | One-liner |
 |---|---|---|
-| [sso-auth](ideas/sso-auth/README.md) | Idea | OIDC loopback-redirect auth so MCP clients can sign in as the human user instead of a static admin account. |
+| [sso-auth](ideas/sso-auth/README.md) | Implemented | OIDC loopback-redirect auth so MCP clients can sign in as the human user instead of a static admin account. Backend `compass-deploy:62bef58`, MCP commit forthcoming. |
 | [write-tools](ideas/write-tools/README.md) | Idea | `promote` / `approve` / `invalidate` tools with explicit confirmation flow — currently V1 is read-only. |
 | [streaming-log-tail](ideas/streaming-log-tail/README.md) | Idea | Live log tail for Running workflow steps via MCP progress notifications, so agents see step output as it streams. |
 | [bundle-tools](ideas/bundle-tools/README.md) | Idea | `list_bundles` / `get_bundle` / `list_bundlereleases` tools so agents can answer "which envs run which version" without walking Promotions. |

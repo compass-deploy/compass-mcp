@@ -19,6 +19,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/compass-deploy/compass-mcp/internal/auth"
 )
 
 const (
@@ -43,13 +45,18 @@ type Client struct {
 	cfg  Config
 	http *http.Client
 
-	mu        sync.Mutex
-	loggedIn  bool
+	mu       sync.Mutex
+	loggedIn bool
+	// ssoMode means the session was seeded from an SSO loopback flow at
+	// process start. We deliberately do NOT re-run the browser flow on
+	// 401 mid-session — the user has to restart the MCP server. The
+	// cached SSO JWT survives across process restarts on disk.
+	ssoMode bool
 }
 
-// New builds a Client. The HTTP client carries a cookie jar so the
-// session cookie compass-api sets on admin-login is automatically
-// attached to subsequent requests against the same host.
+// New builds a Client for the admin-account flow. The HTTP client carries
+// a cookie jar so the session cookie compass-api sets on admin-login is
+// automatically attached to subsequent requests against the same host.
 func New(cfg Config) (*Client, error) {
 	if cfg.BaseURL == "" {
 		return nil, errors.New("client: BaseURL is required")
@@ -57,6 +64,37 @@ func New(cfg Config) (*Client, error) {
 	if cfg.Username == "" || cfg.Password == "" {
 		return nil, errors.New("client: Username and Password are required")
 	}
+	return newClient(cfg)
+}
+
+// NewWithJWT builds a Client whose session is seeded from an already-
+// acquired SSO JWT. The JWT is dropped into the cookiejar as the
+// compass_session cookie so every subsequent request carries it
+// transparently. `loggedIn = true` short-circuits ensureLoggedIn; a 401
+// later in the session returns a clean "restart" error instead of
+// trying to re-run the browser flow mid-session.
+func NewWithJWT(cfg Config, jwt string) (*Client, error) {
+	if cfg.BaseURL == "" {
+		return nil, errors.New("client: BaseURL is required")
+	}
+	if jwt == "" {
+		return nil, errors.New("client: JWT is required")
+	}
+	c, err := newClient(cfg)
+	if err != nil {
+		return nil, err
+	}
+	u, err := url.Parse(cfg.BaseURL)
+	if err != nil {
+		return nil, fmt.Errorf("client: parse BaseURL: %w", err)
+	}
+	c.http.Jar.SetCookies(u, []*http.Cookie{{Name: "compass_session", Value: jwt, Path: "/"}})
+	c.loggedIn = true
+	c.ssoMode = true
+	return c, nil
+}
+
+func newClient(cfg Config) (*Client, error) {
 	if _, err := url.Parse(cfg.BaseURL); err != nil {
 		return nil, fmt.Errorf("client: parse BaseURL: %w", err)
 	}
@@ -73,29 +111,32 @@ func New(cfg Config) (*Client, error) {
 	}, nil
 }
 
-// NewFromEnv reads COMPASS_URL, COMPASS_USERNAME, COMPASS_PASSWORD and
-// returns a configured Client. Missing values surface as a descriptive
-// error so MCP-host log output points the operator at the right env var.
+// NewFromEnv reads COMPASS_URL and one of the two auth-path env triples
+// and returns a configured Client. With COMPASS_USERNAME set we take the
+// admin path (also requires COMPASS_PASSWORD). Without it we take the SSO
+// loopback flow — which may open the user's browser if no cached JWT
+// exists yet. Either way COMPASS_URL is required.
 func NewFromEnv() (*Client, error) {
-	cfg := Config{
-		BaseURL:  os.Getenv("COMPASS_URL"),
-		Username: os.Getenv("COMPASS_USERNAME"),
-		Password: os.Getenv("COMPASS_PASSWORD"),
+	baseURL := os.Getenv("COMPASS_URL")
+	if baseURL == "" {
+		return nil, errors.New("client: missing env var: COMPASS_URL")
 	}
-	var missing []string
-	if cfg.BaseURL == "" {
-		missing = append(missing, "COMPASS_URL")
+	if os.Getenv("COMPASS_USERNAME") != "" {
+		password := os.Getenv("COMPASS_PASSWORD")
+		if password == "" {
+			return nil, errors.New("client: COMPASS_USERNAME is set but COMPASS_PASSWORD is missing")
+		}
+		return New(Config{
+			BaseURL:  baseURL,
+			Username: os.Getenv("COMPASS_USERNAME"),
+			Password: password,
+		})
 	}
-	if cfg.Username == "" {
-		missing = append(missing, "COMPASS_USERNAME")
+	jwt, err := auth.AcquireJWT(context.Background(), baseURL)
+	if err != nil {
+		return nil, fmt.Errorf("client: SSO: %w", err)
 	}
-	if cfg.Password == "" {
-		missing = append(missing, "COMPASS_PASSWORD")
-	}
-	if len(missing) > 0 {
-		return nil, fmt.Errorf("client: missing env vars: %s", strings.Join(missing, ", "))
-	}
-	return New(cfg)
+	return NewWithJWT(Config{BaseURL: baseURL}, jwt)
 }
 
 // Me calls GET /api/me. First call triggers an admin-login; subsequent
@@ -112,11 +153,22 @@ func (c *Client) Me(ctx context.Context) (*Me, error) {
 
 // ensureLoggedIn performs an admin-login if we haven't yet. The mutex
 // serializes concurrent first-call races to a single login.
+//
+// In SSO mode, "logged in" was true at construction time. If we got here,
+// it means a 401 invalidated the session — the cached JWT expired or was
+// rejected. Rather than silently re-running the browser flow (which would
+// hang any in-flight tool call on a user interaction the agent has no
+// way to surface), surface a clear error. The user restarts the MCP
+// server; the next process start runs the loopback flow eagerly at
+// startup, where blocking on the browser is the expected behaviour.
 func (c *Client) ensureLoggedIn(ctx context.Context) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	if c.loggedIn {
 		return nil
+	}
+	if c.ssoMode {
+		return errors.New("compass SSO session expired; restart the MCP server to re-authenticate")
 	}
 	if err := c.login(ctx); err != nil {
 		return err

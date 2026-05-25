@@ -222,18 +222,88 @@ func TestMe_BadJSON(t *testing.T) {
 	}
 }
 
-func TestNewFromEnv_MissingVars(t *testing.T) {
+func TestNewFromEnv_MissingURL(t *testing.T) {
 	t.Setenv("COMPASS_URL", "")
 	t.Setenv("COMPASS_USERNAME", "")
 	t.Setenv("COMPASS_PASSWORD", "")
 	_, err := NewFromEnv()
-	if err == nil {
-		t.Fatal("expected error when env vars are unset")
+	if err == nil || !strings.Contains(err.Error(), "COMPASS_URL") {
+		t.Fatalf("expected COMPASS_URL error, got %v", err)
 	}
-	for _, want := range []string{"COMPASS_URL", "COMPASS_USERNAME", "COMPASS_PASSWORD"} {
-		if !strings.Contains(err.Error(), want) {
-			t.Errorf("expected %q in error, got %v", want, err)
-		}
+}
+
+func TestNewWithJWT_SeedsCookieAndSkipsAdminLogin(t *testing.T) {
+	api := &fakeAPI{
+		onLogin: func(w http.ResponseWriter, _ *http.Request) {
+			t.Errorf("admin-login should not be called in SSO mode")
+			w.WriteHeader(http.StatusInternalServerError)
+		},
+		onMe: func(w http.ResponseWriter, r *http.Request) {
+			c, err := r.Cookie("compass_session")
+			if err != nil {
+				t.Errorf("expected compass_session cookie, got %v", err)
+				return
+			}
+			if c.Value != "seed-jwt" {
+				t.Errorf("cookie value = %q, want seed-jwt", c.Value)
+			}
+			_ = json.NewEncoder(w).Encode(Me{AuthEnabled: true, Authenticated: true, User: "alice"})
+		},
+	}
+	srv := httptest.NewServer(api.handler())
+	defer srv.Close()
+
+	c, err := NewWithJWT(Config{BaseURL: srv.URL}, "seed-jwt")
+	if err != nil {
+		t.Fatalf("NewWithJWT: %v", err)
+	}
+	me, err := c.Me(context.Background())
+	if err != nil {
+		t.Fatalf("Me: %v", err)
+	}
+	if me.User != "alice" {
+		t.Errorf("Me().User = %q, want alice", me.User)
+	}
+	if api.loginCalls.Load() != 0 {
+		t.Errorf("admin-login called %d times in SSO mode, want 0", api.loginCalls.Load())
+	}
+}
+
+func TestSSOMode_401ReturnsRestartError(t *testing.T) {
+	// In SSO mode a 401 must NOT trigger an admin-login retry — the
+	// caller has no creds. It must surface a clear restart-required error.
+	api := &fakeAPI{
+		onLogin: func(w http.ResponseWriter, _ *http.Request) {
+			t.Errorf("admin-login should not be called on 401 in SSO mode")
+			w.WriteHeader(http.StatusInternalServerError)
+		},
+		onMe: func(w http.ResponseWriter, _ *http.Request) {
+			w.WriteHeader(http.StatusUnauthorized)
+		},
+	}
+	srv := httptest.NewServer(api.handler())
+	defer srv.Close()
+
+	c, err := NewWithJWT(Config{BaseURL: srv.URL}, "seed-jwt")
+	if err != nil {
+		t.Fatalf("NewWithJWT: %v", err)
+	}
+	_, err = c.Me(context.Background())
+	if err == nil || !strings.Contains(err.Error(), "SSO session expired") {
+		t.Fatalf("expected SSO-expired error, got %v", err)
+	}
+	if api.loginCalls.Load() != 0 {
+		t.Errorf("admin-login called %d times in SSO mode, want 0", api.loginCalls.Load())
+	}
+}
+
+func TestNewFromEnv_UsernameWithoutPassword(t *testing.T) {
+	t.Setenv("COMPASS_URL", "https://compass.example.com")
+	t.Setenv("COMPASS_USERNAME", "admin")
+	t.Setenv("COMPASS_PASSWORD", "")
+	_, err := NewFromEnv()
+	if err == nil || !strings.Contains(err.Error(), "COMPASS_PASSWORD") {
+		t.Fatalf("expected COMPASS_PASSWORD error, got %v", err)
 	}
 }
 

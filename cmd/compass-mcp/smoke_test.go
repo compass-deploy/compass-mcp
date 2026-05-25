@@ -14,6 +14,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
@@ -140,6 +141,153 @@ func TestStdioSmoke(t *testing.T) {
 	if !strings.Contains(text, `"user": "admin"`) {
 		t.Fatalf("whoami text missing user=admin:\n%s", text)
 	}
+}
+
+// TestStdioSmoke_SSO exercises the full SSO loopback flow at the binary
+// level: the binary starts without COMPASS_USERNAME, must print a
+// "open this URL" prompt to stderr that includes a /api/auth/cli/login
+// URL, the test parses out the port + state, drives the fake
+// compass-api's cli/login (which 302s straight back to the loopback
+// with a fake JWT), then drives a whoami round-trip to confirm the
+// SSO-seeded cookie carries through.
+func TestStdioSmoke_SSO(t *testing.T) {
+	if testing.Short() {
+		t.Skip("SSO smoke builds the binary; skip with -short")
+	}
+
+	mux := http.NewServeMux()
+	mux.HandleFunc("GET /api/auth/cli/login", func(w http.ResponseWriter, r *http.Request) {
+		port := r.URL.Query().Get("port")
+		state := r.URL.Query().Get("state")
+		http.Redirect(w, r,
+			fmt.Sprintf("http://127.0.0.1:%s/cli-callback?token=%s&state=%s", port, fakeSSOToken, state),
+			http.StatusFound)
+	})
+	mux.HandleFunc("GET /api/me", func(w http.ResponseWriter, r *http.Request) {
+		if c, err := r.Cookie("compass_session"); err != nil || c.Value != fakeSSOToken {
+			w.WriteHeader(http.StatusUnauthorized)
+			return
+		}
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"authEnabled":   true,
+			"authenticated": true,
+			"user":          "alice@example.com",
+			"groups":        []string{"platform-team"},
+		})
+	})
+	srv := httptest.NewServer(mux)
+	defer srv.Close()
+
+	bin := buildBinary(t)
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, bin)
+	cmd.Env = []string{
+		"COMPASS_URL=" + srv.URL,
+		// No COMPASS_USERNAME → SSO path.
+		"COMPASS_MCP_CONFIG_DIR=" + t.TempDir(),
+		"PATH=" + os.Getenv("PATH"),
+	}
+	stdin, err := cmd.StdinPipe()
+	if err != nil {
+		t.Fatalf("stdin: %v", err)
+	}
+	stdout, err := cmd.StdoutPipe()
+	if err != nil {
+		t.Fatalf("stdout: %v", err)
+	}
+	stderr, err := cmd.StderrPipe()
+	if err != nil {
+		t.Fatalf("stderr: %v", err)
+	}
+	if err := cmd.Start(); err != nil {
+		t.Fatalf("start: %v", err)
+	}
+	defer func() {
+		_ = stdin.Close()
+		_ = cmd.Wait()
+	}()
+
+	// Read stderr until we see the cli/login URL. Drive it as if we were
+	// the user's browser — the fake 302s the request straight to the
+	// loopback, which delivers the JWT to the listener and unblocks the
+	// binary's startup.
+	loginURL := waitForLoginURL(t, stderr, 10*time.Second)
+	go func() {
+		// http.Get follows the 302 from cli/login → loopback automatically.
+		// The loopback's 200 (with success HTML) is the JWT-delivered signal.
+		resp, err := http.Get(loginURL)
+		if err != nil {
+			t.Errorf("drive login URL: %v", err)
+			return
+		}
+		_ = resp.Body.Close()
+	}()
+
+	rOut := bufio.NewReader(stdout)
+
+	// 1. initialize + initialized
+	send(t, stdin, map[string]any{
+		"jsonrpc": "2.0", "id": 1, "method": "initialize",
+		"params": map[string]any{
+			"protocolVersion": "2025-11-25",
+			"capabilities":    map[string]any{},
+			"clientInfo":      map[string]any{"name": "smoke-sso", "version": "0.0"},
+		},
+	})
+	if got, _ := jpath(recv(t, rOut), "result", "serverInfo", "name").(string); got != "compass-mcp" {
+		t.Fatalf("initialize: serverInfo.name = %q, want compass-mcp", got)
+	}
+	send(t, stdin, map[string]any{
+		"jsonrpc": "2.0", "method": "notifications/initialized", "params": map[string]any{},
+	})
+
+	// 2. tools/call whoami — confirms the SSO-seeded cookie carries.
+	send(t, stdin, map[string]any{
+		"jsonrpc": "2.0", "id": 2, "method": "tools/call",
+		"params": map[string]any{"name": "whoami", "arguments": map[string]any{}},
+	})
+	callResp := recv(t, rOut)
+	if isErr, _ := jpath(callResp, "result", "isError").(bool); isErr {
+		t.Fatalf("whoami returned isError=true: %s", callResp)
+	}
+	content, _ := jpath(callResp, "result", "content").([]any)
+	text, _ := content[0].(map[string]any)["text"].(string)
+	if !strings.Contains(text, `alice@example.com`) {
+		t.Fatalf("whoami text missing SSO user: %s", text)
+	}
+}
+
+// fakeSSOToken is a tiny well-formed JWT (header.payload.sig) with a
+// far-future exp claim. tokenExpiry parses this without verifying.
+//
+//	header  = {"alg":"HS256","typ":"JWT"}
+//	payload = {"exp":4102444800}  // 2100-01-01
+//	sig     = (anything; ignored)
+const fakeSSOToken = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJleHAiOjQxMDI0NDQ4MDB9.sig"
+
+// waitForLoginURL scans the subprocess's stderr (it'll print the
+// loopback URL when ListenForJWT starts) until a /api/auth/cli/login
+// URL appears. Times out cleanly so a regression that stops printing
+// the URL doesn't hang the test forever.
+func waitForLoginURL(t *testing.T, stderr io.Reader, timeout time.Duration) string {
+	t.Helper()
+	deadline := time.Now().Add(timeout)
+	rd := bufio.NewReader(stderr)
+	for time.Now().Before(deadline) {
+		line, err := rd.ReadString('\n')
+		if line != "" {
+			t.Logf("stderr: %s", strings.TrimRight(line, "\n"))
+			if idx := strings.Index(line, "http://"); idx >= 0 && strings.Contains(line, "/api/auth/cli/login") {
+				return strings.TrimSpace(line[idx:])
+			}
+		}
+		if err != nil {
+			t.Fatalf("read stderr: %v", err)
+		}
+	}
+	t.Fatalf("did not see /api/auth/cli/login URL in stderr within %s", timeout)
+	return ""
 }
 
 func buildBinary(t *testing.T) string {

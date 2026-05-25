@@ -1,11 +1,11 @@
 # SSO auth for MCP (OIDC loopback-redirect)
 
 ## Status
-**Idea — design partially open.**
-
-Tracked previously as a one-liner in CLAUDE.md's "Deferred from V1"
-list. Promoted to a real design doc because it's the largest single
-blocker for production use.
+**Implemented (v1).** Backend half shipped in `compass-deploy:62bef58`;
+MCP half in this repo's most recent commit. Design preserved below as
+the record. Open follow-on tracked in HARDENING.md: a long-lived "MCP
+token" pattern for CI / headless environments where no browser is
+available.
 
 ## Motivation
 
