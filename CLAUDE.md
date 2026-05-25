@@ -77,6 +77,17 @@ agent-visible result. No mocks beyond the fake server.
 
 Every new tool needs at least one integration test.
 
+**Integration tests must assert the MCP-client-visible JSON shape**,
+not just the in-process Go struct. A real client (Claude Code, Cursor)
+runs its own schema validation against `structuredContent` — if your
+test asserts `res.StructuredContent.([]MyType)` and the marshalled
+JSON would be a bare array, the test passes but the tool fails for
+end users. MCP requires `structuredContent` to be a JSON *object* at
+the root. Wrap list returns in a typed envelope (`{"items": [...]}`,
+`{"pipelines": [...]}`, etc.). The bug fixed in `f605130` shipped past
+green tests for exactly this reason; the residual gap is logged in
+[HARDENING.md](HARDENING.md).
+
 ### 3. End-to-end smoke
 A small test (or `make e2e`) that launches the real binary as a
 subprocess, speaks the MCP protocol over stdio, and asserts at least
@@ -127,13 +138,31 @@ COMPASS_URL=http://compass.local COMPASS_USERNAME=admin COMPASS_PASSWORD=admin \
 
 ## Where we are right now
 
-Bootstrap stage. No tools shipped yet. Building toward V1:
+**V1 shipped.** Six read-only tools, admin-account auth, stdio
+transport. Full list in [README.md](README.md). Implementation
+milestones:
 
-- M1 — MCP skeleton + admin-account auth + caching client.
-- M2 — Four read-only tools: list_pipelines, list_promotions,
-  get_promotion, get_promotion_logs.
-- M3 — README walkthrough for Claude Code config + a smoke e2e.
+- M1 (`2b3a7d0`) — MCP skeleton + admin-account auth + caching client + `whoami`.
+- M2 (`18e33c2`, `450b615`, `2a69514`) — Five tools shipped:
+  `list_pipelines`, `list_promotions`, `get_promotion`,
+  `list_promotion_steps`, `get_promotion_step_logs`.
+- M3 (`ab463c1`) — README walkthrough for Claude Code config + a
+  smoke e2e.
+- Post-V1 (`f605130`) — fixed a real bug: list-tool results were
+  returning bare JSON arrays as `structuredContent`, which the MCP
+  spec rejects. Now wrapped in typed envelopes
+  (`{"pipelines": [...]}`). Tests didn't catch this because they
+  asserted the in-process Go shape, not the MCP-client-visible
+  envelope — see [HARDENING.md](HARDENING.md) "Test pattern" for
+  the residual gap.
 
-Deferred from V1: OIDC device-flow auth (needed for production), write
-tools (promote/approve/invalidate) with explicit user confirmation,
-streaming log tail.
+### Backlog
+
+- **Open ideas** — design-open enhancements: see [IDEAS.md](IDEAS.md).
+  Current entries: SSO auth (largest single blocker for production
+  use), write tools (`promote`/`approve`/`invalidate`), streaming log
+  tail, Bundle-aware tools.
+- **Hardening** — prod-quality gaps in shipped code: see
+  [HARDENING.md](HARDENING.md). Current entries: test pattern for
+  MCP-client-visible shape; error message quality; re-auth
+  resilience; plaintext-password env var concerns.
