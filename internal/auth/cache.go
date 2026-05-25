@@ -64,15 +64,20 @@ func LoadToken(baseURL string) string {
 // SaveToken writes the JWT for baseURL into the on-disk cache. Creates the
 // config directory (mode 0700) and writes the file (mode 0600). Existing
 // entries for other baseURLs are preserved.
+//
+// The write is atomic via temp-file + rename so two MCP processes starting
+// simultaneously against the same COMPASS_URL can't tear each other's
+// entries — the loser wins (last writer takes the file) but the file is
+// always self-consistent.
 func SaveToken(baseURL, token string, expiresAt time.Time) error {
 	path, err := cachePath()
 	if err != nil {
 		return err
 	}
-	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+	dir := filepath.Dir(path)
+	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return err
 	}
-	// Read-modify-write so we don't drop other COMPASS_URL entries.
 	existing := cacheFile{}
 	if data, err := os.ReadFile(path); err == nil {
 		_ = json.Unmarshal(data, &existing)
@@ -82,7 +87,26 @@ func SaveToken(baseURL, token string, expiresAt time.Time) error {
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(path, data, 0o600)
+	tmp, err := os.CreateTemp(dir, "session.*.tmp")
+	if err != nil {
+		return err
+	}
+	tmpPath := tmp.Name()
+	if _, err := tmp.Write(data); err != nil {
+		_ = tmp.Close()
+		_ = os.Remove(tmpPath)
+		return err
+	}
+	if err := tmp.Chmod(0o600); err != nil {
+		_ = tmp.Close()
+		_ = os.Remove(tmpPath)
+		return err
+	}
+	if err := tmp.Close(); err != nil {
+		_ = os.Remove(tmpPath)
+		return err
+	}
+	return os.Rename(tmpPath, path)
 }
 
 func cachePath() (string, error) {

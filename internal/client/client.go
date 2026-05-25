@@ -64,7 +64,14 @@ func New(cfg Config) (*Client, error) {
 	if cfg.Username == "" || cfg.Password == "" {
 		return nil, errors.New("client: Username and Password are required")
 	}
-	return newClient(cfg)
+	jar, err := cookiejar.New(nil)
+	if err != nil {
+		return nil, fmt.Errorf("client: cookiejar: %w", err)
+	}
+	return &Client{
+		cfg:  cfg,
+		http: &http.Client{Jar: jar, Timeout: defaultTimeout},
+	}, nil
 }
 
 // NewWithJWT builds a Client whose session is seeded from an already-
@@ -80,34 +87,20 @@ func NewWithJWT(cfg Config, jwt string) (*Client, error) {
 	if jwt == "" {
 		return nil, errors.New("client: JWT is required")
 	}
-	c, err := newClient(cfg)
-	if err != nil {
-		return nil, err
-	}
 	u, err := url.Parse(cfg.BaseURL)
 	if err != nil {
-		return nil, fmt.Errorf("client: parse BaseURL: %w", err)
-	}
-	c.http.Jar.SetCookies(u, []*http.Cookie{{Name: "compass_session", Value: jwt, Path: "/"}})
-	c.loggedIn = true
-	c.ssoMode = true
-	return c, nil
-}
-
-func newClient(cfg Config) (*Client, error) {
-	if _, err := url.Parse(cfg.BaseURL); err != nil {
 		return nil, fmt.Errorf("client: parse BaseURL: %w", err)
 	}
 	jar, err := cookiejar.New(nil)
 	if err != nil {
 		return nil, fmt.Errorf("client: cookiejar: %w", err)
 	}
+	jar.SetCookies(u, []*http.Cookie{{Name: "compass_session", Value: jwt, Path: "/"}})
 	return &Client{
-		cfg: cfg,
-		http: &http.Client{
-			Jar:     jar,
-			Timeout: defaultTimeout,
-		},
+		cfg:      cfg,
+		http:     &http.Client{Jar: jar, Timeout: defaultTimeout},
+		loggedIn: true,
+		ssoMode:  true,
 	}, nil
 }
 
