@@ -36,13 +36,13 @@ The MCP protocol has an `elicitation/create` primitive
 that lets a server ask the agent's host (Claude Code / Cursor / etc.)
 to prompt the user mid-tool-call. The flow for `promote`:
 
-1. Agent calls `promote(pipeline="sampleapp", environment="prod", release="sampleapp-1.0.2")`.
+1. Agent calls `promote(pipeline="sampleapp", environment="prod", release="sampleapp-26.05.26.1")`.
 2. MCP server validates args, looks up the env's gates (does it require
    approval? what's the current upstream-verified state?), and renders
    a summary.
 3. MCP server sends `elicitation/create` with the summary + an
    `accept`/`cancel` choice.
-4. Host displays it to the user inline ("Confirm: promote sampleapp-1.0.2
+4. Host displays it to the user inline ("Confirm: promote sampleapp-26.05.26.1
    to prod (requires approval after)?"). User clicks accept.
 5. MCP server POSTs to `compass-api` and returns the new Promotion's
    name + initial status.
@@ -62,7 +62,7 @@ message and answers explicitly. Less ergonomic but works everywhere.
   the Promotion CR gets stamped with the actual user's identity.
   Without SSO, write tools probably shouldn't ship — staying read-only
   is better than every action being attributed to `admin`.
-- **No batching.** Each tool acts on one CR. "Promote 1.0.2 to all
+- **No batching.** Each tool acts on one CR. "Promote 26.05.26.1 to all
   three prod regions" is three calls, not one — keeps the audit
   trail granular and prevents partial-failure ambiguity.
 - **Idempotency.** Compass uses `metadata.generateName` for Promotions

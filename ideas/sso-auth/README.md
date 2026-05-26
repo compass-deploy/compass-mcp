@@ -15,8 +15,8 @@ but two real problems in production:
 
 1. **Wrong identity.** Every action an agent takes is stamped
    `requestedBy: admin` instead of the human driving the agent. The
-   audit story collapses ("alice asked Claude to promote 1.0.2" reads
-   as "admin promoted 1.0.2" in the Activity tab).
+   audit story collapses ("alice asked Claude to promote 26.05.26.1" reads
+   as "admin promoted 26.05.26.1" in the Activity tab).
 2. **Wrong authorization.** The admin account has whatever ClusterRole
    it's bound to — typically `compass-admin`. The agent inherits that
    regardless of what the actual user is allowed to do. RBAC at

@@ -7,7 +7,7 @@ Surfaced while working on the generic-Bundle redesign in compass-deploy
 (commits `e418be7` … `7632fce`). V1 MCP has no Bundle-aware tooling at
 all — agents can list pipelines and walk promotions, but can't answer
 basic Bundle questions like "what releases are available?" or "is
-1.0.2 a valid release on this Pipeline?"
+26.05.26.1 a valid release on this Pipeline?"
 
 ## Motivation
 
@@ -15,7 +15,7 @@ Real questions an agent should be able to answer that V1 can't:
 
 - *"Which versions of `sampleapp` are available to deploy?"*
   Requires `list_bundlereleases(pipeline=sampleapp)`.
-- *"Why isn't 1.0.2 showing up as a release?"* Requires
+- *"Why isn't 26.05.26.1 showing up as a release?"* Requires
   `get_bundle(pipeline, name)` to surface
   `status.conditions[ReleaseDiscovery]` — the per-artifact tag
   breakdown we ship in `compass-deploy` already names exactly which
@@ -91,7 +91,7 @@ pattern in `compass-api/internal/api/server.go`.
   Probably not — `whoami` should stay an identity/permission snapshot,
   not a data dump.
 - **Cross-Pipeline `list_bundlereleases` by version**, e.g. "which
-  Pipelines are running 1.0.2 anywhere?" Bundle of work bigger than v1;
+  Pipelines are running 26.05.26.1 anywhere?" Bundle of work bigger than v1;
   out of scope for now.
 
 ## Out of scope
